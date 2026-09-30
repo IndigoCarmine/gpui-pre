@@ -3271,9 +3271,6 @@ impl Window {
         self.capslock
     }
 
-    /// Produces a new frame and assigns it to `rendered_frame`. To actually show
-    /// the contents of the new [`Scene`], use [`Self::present`].
-    #[profiling::function]
     /// Record what each frame paints from now on, as drawing commands (see
     /// [`PaintRecord`]), for exporting the window as vector graphics.
     ///
@@ -3312,6 +3309,9 @@ impl Window {
         }
     }
 
+    /// Produces a new frame and assigns it to `rendered_frame`. To actually show
+    /// the contents of the new [`Scene`], use [`Self::present`].
+    #[profiling::function]
     pub fn draw(&mut self, cx: &mut App) -> ArenaClearNeeded {
         // A frame's record is its own.
         if let Some(list) = &mut self.paint_record {
