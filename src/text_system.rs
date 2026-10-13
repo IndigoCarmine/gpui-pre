@@ -431,7 +431,6 @@ impl TextSystem {
         }))
     }
 
-    /// Get the advance width for the given character, in the given font and size.
     /// The data of the font file `font_id` comes from and the font's index in
     /// it, for embedding the font in a document (see
     /// [`PlatformTextSystem::font_data`]).
@@ -441,6 +440,7 @@ impl TextSystem {
         self.platform_text_system.font_data(font_id)
     }
 
+    /// Get the advance width for the given character, in the given font and size.
     pub fn advance(&self, font_id: FontId, font_size: Pixels, ch: char) -> Result<Size<Pixels>> {
         let glyph_id = self
             .platform_text_system
