@@ -2,6 +2,7 @@
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `Window::record_paints` and `Window::take_recorded_paints`.
 // Modified by ibis inc. for ibisOffice (2026-09-30): added `Window::record_paints_only` (recording without drawing).
 // Modified by ibis inc. for ibisOffice (2026-10-01): `Window::paint_path` composites the path over the whole device pixels around it (its partly covered edge pixels were cut off).
+// Modified by ibis inc. for ibisOffice (2026-10-17): moving a window does not draw it again (`Window::moved`); resizing it keeps the cached views (`Window::bounds_changed`).
 #[cfg(feature = "profiler")]
 use crate::DebugFrameOverlayMode;
 use crate::PaintRecord;
@@ -1876,7 +1877,7 @@ impl Window {
             let mut cx = cx.to_async();
             move || {
                 handle
-                    .update(&mut cx, |_, window, cx| window.bounds_changed(cx))
+                    .update(&mut cx, |_, window, cx| window.moved(cx))
                     .log_err();
             }
         }));
@@ -2702,13 +2703,44 @@ impl Window {
     /// the platform window, then notifies observers. Normally called automatically
     /// by the platform's resize callback, but exposed publicly for test infrastructure.
     pub fn bounds_changed(&mut self, cx: &mut App) {
-        self.scale_factor = self.platform_window.scale_factor();
+        let scale_factor = self.platform_window.scale_factor();
+        let rescaled = scale_factor != self.scale_factor;
+        self.scale_factor = scale_factor;
         self.viewport_size = self.platform_window.content_size();
         self.display_id = self.platform_window.display().map(|display| display.id());
         self.mouse_position = self.platform_window.mouse_position();
 
-        self.refresh();
+        // Every view is drawn again for a new scale factor. A new size draws
+        // the window again but keeps the cached views whose bounds did not
+        // change (a list beside a resized pane): drawing all of them at each
+        // step of a resize made a large document's window lag behind it.
+        if rescaled {
+            self.refresh();
+        } else if self.invalidator.not_drawing() {
+            self.invalidator.set_dirty(true);
+        }
 
+        self.bounds_observers
+            .clone()
+            .retain(&(), |callback| callback(self, cx));
+    }
+
+    /// The platform window was moved. Its content looks the same wherever
+    /// it is, so it is drawn again only when the move changed its scale
+    /// factor, size or display (onto another monitor); otherwise moving a
+    /// window would draw the whole of it at every step of the move.
+    fn moved(&mut self, cx: &mut App) {
+        let scale_factor = self.platform_window.scale_factor();
+        let viewport_size = self.platform_window.content_size();
+        let display_id = self.platform_window.display().map(|display| display.id());
+        if scale_factor != self.scale_factor
+            || viewport_size != self.viewport_size
+            || display_id != self.display_id
+        {
+            self.bounds_changed(cx);
+            return;
+        }
+        self.mouse_position = self.platform_window.mouse_position();
         self.bounds_observers
             .clone()
             .retain(&(), |callback| callback(self, cx));

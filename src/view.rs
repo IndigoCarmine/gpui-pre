@@ -1,3 +1,4 @@
+// Modified by ibis inc. for ibisOffice (2026-10-17): a cached view is reused under another content mask that clips it alike (`same_clip`).
 use crate::{
     AnyElement, AnyEntity, AnyWeakEntity, App, AvailableSpace, Bounds, ContentMask, Context,
     Element, ElementId, Entity, EntityId, GlobalElementId, InspectorElementId, IntoElement,
@@ -458,6 +459,14 @@ fn request_layout_component(
     })
 }
 
+/// Whether a view at `bounds` is clipped alike by the content masks `old`
+/// and `new`: they are the same, or both hold the whole view (a row of a
+/// list that the list's resize did not reach). A cached view is assumed to
+/// draw within its bounds.
+fn same_clip(old: &ContentMask<Pixels>, new: &ContentMask<Pixels>, bounds: Bounds<Pixels>) -> bool {
+    old == new || (old.bounds.intersect(&bounds) == bounds && new.bounds.intersect(&bounds) == bounds)
+}
+
 #[inline(never)]
 fn prepaint_view(
     entity_id: EntityId,
@@ -483,7 +492,7 @@ fn prepaint_view(
 
                 if let Some(mut element_state) = element_state
                     && element_state.cache_key.bounds == bounds
-                    && element_state.cache_key.content_mask == content_mask
+                    && same_clip(&element_state.cache_key.content_mask, &content_mask, bounds)
                     && element_state.cache_key.text_style == text_style
                     && !window.dirty_views.contains(&entity_id)
                     && !window.refreshing
