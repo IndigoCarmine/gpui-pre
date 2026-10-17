@@ -1,4 +1,5 @@
 // Modified by ibis inc. for ibisOffice (2026-09-29): a `Path` keeps the outline it was tessellated from (`Path::outline`).
+// Modified by ibis inc. for ibisOffice (2026-10-18): added `SceneSnapshot`, `Scene::snapshot_bounds`, and `Scene::replay_scaled`.
 // todo("windows"): remove
 #![cfg_attr(windows, allow(dead_code))]
 
@@ -150,6 +151,46 @@ impl Scene {
         }
     }
 
+    /// Capture primitives from this scene whose clipped bounds intersect `region`.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn snapshot_bounds(&self, region: Bounds<ScaledPixels>) -> SceneSnapshot {
+        let mut primitives = Vec::new();
+        for operation in &self.paint_operations {
+            if let PaintOperation::Primitive(primitive) = operation {
+                let clipped = primitive
+                    .bounds()
+                    .intersect(&primitive.content_mask().bounds);
+                if !clipped.is_empty() && clipped.intersects(&region) {
+                    primitives.push(primitive.clone());
+                }
+            }
+        }
+        SceneSnapshot {
+            primitives: Arc::new(primitives),
+        }
+    }
+
+    /// Replay a [`SceneSnapshot`] scaled around `origin` by `scale`, clipped to `clip`.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn replay_scaled(
+        &mut self,
+        snapshot: &SceneSnapshot,
+        origin: Point<ScaledPixels>,
+        scale: f32,
+        clip: Bounds<ScaledPixels>,
+    ) {
+        if scale <= 0.0 || clip.is_empty() {
+            return;
+        }
+        for primitive in snapshot.primitives.iter() {
+            if let Some(scaled) = primitive.scale_around(origin, scale, clip) {
+                self.insert_primitive(scaled);
+            }
+        }
+    }
+
     pub fn finish(&mut self) {
         self.shadows.sort_by_key(|shadow| shadow.order);
         self.quads.sort_by_key(|quad| quad.order);
@@ -190,6 +231,26 @@ impl Scene {
             surfaces_start: 0,
             surfaces_iter: self.surfaces.iter().peekable(),
         }
+    }
+}
+
+/// A reusable snapshot of GPU primitives captured from a rendered [`Scene`].
+///
+/// Added in ibisOffice's fork of gpui-pre 0.3.6.
+#[derive(Clone, Default)]
+pub struct SceneSnapshot {
+    primitives: Arc<Vec<Primitive>>,
+}
+
+impl SceneSnapshot {
+    /// Returns true if no primitives were captured in this snapshot.
+    pub fn is_empty(&self) -> bool {
+        self.primitives.is_empty()
+    }
+
+    /// Number of primitives in this snapshot.
+    pub fn len(&self) -> usize {
+        self.primitives.len()
     }
 }
 
@@ -258,6 +319,209 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => &sprite.content_mask,
             Primitive::Surface(surface) => &surface.content_mask,
         }
+    }
+
+    pub fn scale_around(
+        &self,
+        origin: Point<ScaledPixels>,
+        scale: f32,
+        clip: Bounds<ScaledPixels>,
+    ) -> Option<Primitive> {
+        let scale_pt = |p: Point<ScaledPixels>| -> Point<ScaledPixels> {
+            Point::new(
+                ScaledPixels(origin.x.0 + (p.x.0 - origin.x.0) * scale),
+                ScaledPixels(origin.y.0 + (p.y.0 - origin.y.0) * scale),
+            )
+        };
+        let scale_sz = |s: Size<ScaledPixels>| -> Size<ScaledPixels> {
+            Size::new(
+                ScaledPixels(s.width.0 * scale),
+                ScaledPixels(s.height.0 * scale),
+            )
+        };
+        let scale_bounds = |b: Bounds<ScaledPixels>| -> Bounds<ScaledPixels> {
+            Bounds {
+                origin: scale_pt(b.origin),
+                size: scale_sz(b.size),
+            }
+        };
+        let scale_mask = |m: &ContentMask<ScaledPixels>| -> ContentMask<ScaledPixels> {
+            ContentMask {
+                bounds: scale_bounds(m.bounds).intersect(&clip),
+            }
+        };
+        let scale_corners = |c: Corners<ScaledPixels>| -> Corners<ScaledPixels> {
+            Corners {
+                top_left: ScaledPixels(c.top_left.0 * scale),
+                top_right: ScaledPixels(c.top_right.0 * scale),
+                bottom_right: ScaledPixels(c.bottom_right.0 * scale),
+                bottom_left: ScaledPixels(c.bottom_left.0 * scale),
+            }
+        };
+        let scale_edges = |e: Edges<ScaledPixels>| -> Edges<ScaledPixels> {
+            Edges {
+                top: ScaledPixels(e.top.0 * scale),
+                right: ScaledPixels(e.right.0 * scale),
+                bottom: ScaledPixels(e.bottom.0 * scale),
+                left: ScaledPixels(e.left.0 * scale),
+            }
+        };
+        let scale_transform = |tm: TransformationMatrix| -> TransformationMatrix {
+            if tm == TransformationMatrix::unit() {
+                return tm;
+            }
+            let r = tm.rotation_scale;
+            let t = tm.translation;
+            let ox = origin.x.0;
+            let oy = origin.y.0;
+            let rx = r[0][0] * ox + r[0][1] * oy;
+            let ry = r[1][0] * ox + r[1][1] * oy;
+            TransformationMatrix {
+                rotation_scale: r,
+                translation: [
+                    ox - rx + scale * (t[0] - ox + rx),
+                    oy - ry + scale * (t[1] - oy + ry),
+                ],
+            }
+        };
+
+        let out = match self {
+            Primitive::Shadow(s) => {
+                let content_mask = scale_mask(&s.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::Shadow(Shadow {
+                    order: 0,
+                    blur_radius: ScaledPixels(s.blur_radius.0 * scale),
+                    bounds: scale_bounds(s.bounds),
+                    corner_radii: scale_corners(s.corner_radii),
+                    content_mask,
+                    color: s.color,
+                    element_bounds: scale_bounds(s.element_bounds),
+                    element_corner_radii: scale_corners(s.element_corner_radii),
+                    inset: s.inset,
+                    pad: s.pad,
+                })
+            }
+            Primitive::Quad(q) => {
+                let content_mask = scale_mask(&q.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::Quad(Quad {
+                    order: 0,
+                    border_style: q.border_style,
+                    bounds: scale_bounds(q.bounds),
+                    content_mask,
+                    background: q.background,
+                    border_color: q.border_color,
+                    corner_radii: scale_corners(q.corner_radii),
+                    border_widths: scale_edges(q.border_widths),
+                })
+            }
+            Primitive::Path(p) => {
+                let content_mask = scale_mask(&p.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::Path(Path {
+                    id: p.id,
+                    order: 0,
+                    bounds: scale_bounds(p.bounds),
+                    content_mask: content_mask.clone(),
+                    vertices: p
+                        .vertices
+                        .iter()
+                        .map(|v| PathVertex {
+                            xy_position: scale_pt(v.xy_position),
+                            st_position: v.st_position,
+                            content_mask: scale_mask(&v.content_mask),
+                        })
+                        .collect(),
+                    color: p.color,
+                    start: scale_pt(p.start),
+                    current: scale_pt(p.current),
+                    contour_count: p.contour_count,
+                    outline: p.outline.clone(),
+                })
+            }
+            Primitive::Underline(u) => {
+                let content_mask = scale_mask(&u.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::Underline(Underline {
+                    order: 0,
+                    pad: u.pad,
+                    bounds: scale_bounds(u.bounds),
+                    content_mask,
+                    color: u.color,
+                    thickness: ScaledPixels((u.thickness.0 * scale).max(1.0)),
+                    wavy: u.wavy,
+                })
+            }
+            Primitive::MonochromeSprite(s) => {
+                let content_mask = scale_mask(&s.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::MonochromeSprite(MonochromeSprite {
+                    order: 0,
+                    pad: s.pad,
+                    bounds: scale_bounds(s.bounds),
+                    content_mask,
+                    color: s.color,
+                    tile: s.tile,
+                    transformation: scale_transform(s.transformation),
+                })
+            }
+            Primitive::SubpixelSprite(s) => {
+                let content_mask = scale_mask(&s.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::SubpixelSprite(SubpixelSprite {
+                    order: 0,
+                    pad: s.pad,
+                    bounds: scale_bounds(s.bounds),
+                    content_mask,
+                    color: s.color,
+                    tile: s.tile,
+                    transformation: scale_transform(s.transformation),
+                })
+            }
+            Primitive::PolychromeSprite(s) => {
+                let content_mask = scale_mask(&s.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::PolychromeSprite(PolychromeSprite {
+                    order: 0,
+                    pad: s.pad,
+                    grayscale: s.grayscale,
+                    opacity: s.opacity,
+                    bounds: scale_bounds(s.bounds),
+                    content_mask,
+                    corner_radii: scale_corners(s.corner_radii),
+                    tile: s.tile,
+                })
+            }
+            Primitive::Surface(s) => {
+                let content_mask = scale_mask(&s.content_mask);
+                if content_mask.bounds.is_empty() {
+                    return None;
+                }
+                Primitive::Surface(PaintSurface {
+                    order: 0,
+                    bounds: scale_bounds(s.bounds),
+                    content_mask,
+                    #[cfg(target_os = "macos")]
+                    image_buffer: s.image_buffer.clone(),
+                })
+            }
+        };
+        Some(out)
     }
 }
 
