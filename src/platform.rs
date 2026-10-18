@@ -258,6 +258,17 @@ pub trait Platform: 'static {
         directory: &Path,
         suggested_name: Option<&str>,
     ) -> oneshot::Receiver<Result<Option<PathBuf>>>;
+    /// As [`Self::prompt_for_new_path`], with a choice of file formats in the dialog where the platform has one
+    /// (macOS: a pop-up menu beside the name). Platforms without it ask as `prompt_for_new_path` does.
+    /// (Modified by ibis inc.: added.)
+    fn prompt_for_new_path_with_formats(
+        &self,
+        directory: &Path,
+        suggested_name: Option<&str>,
+        _formats: &[SaveFormat],
+    ) -> oneshot::Receiver<Result<Option<PathBuf>>> {
+        self.prompt_for_new_path(directory, suggested_name)
+    }
     fn can_select_mixed_files_and_dirs(&self) -> bool;
     fn reveal_path(&self, path: &Path);
     fn open_with_system(&self, path: &Path);
@@ -2503,6 +2514,16 @@ pub struct PathPromptOptions {
     pub multiple: bool,
     /// The prompt to show to a user when selecting a path
     pub prompt: Option<SharedString>,
+}
+
+/// A file format of the save dialog's choice (see [`Platform::prompt_for_new_path_with_formats`]).
+/// (Modified by ibis inc.: added.)
+#[derive(Clone, Debug)]
+pub struct SaveFormat {
+    /// The name shown in the choice.
+    pub label: SharedString,
+    /// The extensions (without the dot, e.g. `"odt"`) of the format; the first is the one a name gets.
+    pub extensions: Vec<String>,
 }
 
 /// What kind of prompt styling to show

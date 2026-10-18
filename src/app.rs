@@ -1705,6 +1705,19 @@ impl App {
         self.platform.prompt_for_new_path(directory, suggested_name)
     }
 
+    /// As [`App::prompt_for_new_path`], with a choice of file formats in the dialog where the platform has one
+    /// (macOS: a pop-up menu; the extension typed in the name is kept when it is another). The path the user
+    /// chose is relayed as with `prompt_for_new_path`. (Modified by ibis inc.: added.)
+    pub fn prompt_for_new_path_with_formats(
+        &self,
+        directory: &Path,
+        suggested_name: Option<&str>,
+        formats: &[crate::SaveFormat],
+    ) -> oneshot::Receiver<Result<Option<PathBuf>>> {
+        self.platform
+            .prompt_for_new_path_with_formats(directory, suggested_name, formats)
+    }
+
     /// Reveals the specified path at the platform level, such as in Finder on macOS.
     pub fn reveal_path(&self, path: &Path) {
         self.platform.reveal_path(path)
