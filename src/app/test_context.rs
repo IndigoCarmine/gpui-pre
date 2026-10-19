@@ -1391,7 +1391,7 @@ mod tests {
         let receiver = cx.update(|cx| {
             cx.prompt_for_paths(PathPromptOptions {
                 files: false,
-                directories: true,
+                directories: true, extensions: Vec::new(),
                 multiple: true,
                 prompt: None,
             })
@@ -1417,7 +1417,7 @@ mod tests {
         let receiver = cx.update(|cx| {
             cx.prompt_for_paths(PathPromptOptions {
                 files: true,
-                directories: false,
+                directories: false, extensions: Vec::new(),
                 multiple: false,
                 prompt: None,
             })

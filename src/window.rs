@@ -3,6 +3,7 @@
 // Modified by ibis inc. for ibisOffice (2026-09-30): added `Window::record_paints_only` (recording without drawing).
 // Modified by ibis inc. for ibisOffice (2026-10-01): `Window::paint_path` composites the path over the whole device pixels around it (its partly covered edge pixels were cut off).
 // Modified by ibis inc. for ibisOffice (2026-10-17): moving a window does not draw it again (`Window::moved`); resizing it keeps the cached views (`Window::bounds_changed`).
+// Modified by ibis inc. for ibisOffice (2026-10-18): added `Window::snapshot_rendered_scene` and `Window::paint_scene_snapshot`.
 #[cfg(feature = "profiler")]
 use crate::DebugFrameOverlayMode;
 use crate::PaintRecord;
@@ -22,13 +23,14 @@ use crate::{
     PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point, PolychromeSprite,
     Priority, PromptButton, PromptLevel, Quad, Render, RenderGlyphParams, RenderImage,
     RenderImageParams, RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR,
-    SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow, SharedString, Size,
-    StrikethroughStyle, Style, SubpixelSprite, SubscriberSet, Subscription, SystemWindowTab,
-    SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextInputConfiguration,
-    TextInputStateChange, TextRenderingMode, TextStyle, TextStyleRefinement, ThermalState,
-    TransformationMatrix, Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
-    WindowVisibility, point, prelude::*, px, rems, size, transparent_black,
+    SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, SceneSnapshot, Shadow,
+    SharedString, Size, StrikethroughStyle, Style, SubpixelSprite, SubscriberSet, Subscription,
+    SystemWindowTab, SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task,
+    TextInputConfiguration, TextInputStateChange, TextRenderingMode, TextStyle,
+    TextStyleRefinement, ThermalState, TransformationMatrix, Underline, UnderlineStyle,
+    WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControls, WindowDecorations,
+    WindowOptions, WindowParams, WindowTextSystem, WindowVisibility, point, prelude::*, px, rems,
+    size, transparent_black,
 };
 
 use crate::gestures::{GestureTuning, RecognizedTouchGesture, TouchGestureRecognizer};
@@ -3304,9 +3306,6 @@ impl Window {
         self.capslock
     }
 
-    /// Produces a new frame and assigns it to `rendered_frame`. To actually show
-    /// the contents of the new [`Scene`], use [`Self::present`].
-    #[profiling::function]
     /// Record what each frame paints from now on, as drawing commands (see
     /// [`PaintRecord`]), for exporting the window as vector graphics.
     ///
@@ -3335,6 +3334,41 @@ impl Window {
         self.paint_record.take()
     }
 
+    /// Capture a [`SceneSnapshot`] of the GPU primitives from the last rendered frame
+    /// whose clipped bounds intersect `bounds`.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn snapshot_rendered_scene(&self, bounds: Bounds<Pixels>) -> SceneSnapshot {
+        let region = self.cover_bounds(bounds);
+        self.rendered_frame.scene.snapshot_bounds(region)
+    }
+
+    /// Paint a previously captured [`SceneSnapshot`] into the current frame's scene,
+    /// scaled around `origin` by `scale` and clipped to `clip` (intersected with the
+    /// current content mask).
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn paint_scene_snapshot(
+        &mut self,
+        snapshot: &SceneSnapshot,
+        origin: Point<Pixels>,
+        scale: f32,
+        clip: Bounds<Pixels>,
+    ) {
+        self.invalidator.debug_assert_paint();
+        if self.paint_record_only {
+            return;
+        }
+        let scale_factor = self.scale_factor();
+        let scaled_origin = origin.scale(scale_factor);
+        let scaled_clip = self
+            .cover_bounds(clip)
+            .intersect(&self.snapped_content_mask().bounds);
+        self.next_frame
+            .scene
+            .replay_scaled(snapshot, scaled_origin, scale, scaled_clip);
+    }
+
     fn record_paint(&mut self, record: impl FnOnce(Bounds<Pixels>) -> PaintRecord) {
         if self.paint_record.is_some() {
             let clip = self.content_mask().bounds;
@@ -3345,6 +3379,9 @@ impl Window {
         }
     }
 
+    /// Produces a new frame and assigns it to `rendered_frame`. To actually show
+    /// the contents of the new [`Scene`], use [`Self::present`].
+    #[profiling::function]
     pub fn draw(&mut self, cx: &mut App) -> ArenaClearNeeded {
         // A frame's record is its own.
         if let Some(list) = &mut self.paint_record {

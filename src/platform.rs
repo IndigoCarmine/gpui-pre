@@ -2497,6 +2497,8 @@ pub struct PathPromptOptions {
     pub files: bool,
     /// Should the prompt allow directories to be selected?
     pub directories: bool,
+    /// The extensions (without the dot, e.g. `"csv"`) of the files that can be picked; other files are filtered out or greyed out by the dialog. Empty: any file. (Modified by ibis inc.: added.)
+    pub extensions: Vec<String>,
     /// Should the prompt allow multiple files to be selected?
     pub multiple: bool,
     /// The prompt to show to a user when selecting a path
