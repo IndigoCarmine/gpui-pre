@@ -1,5 +1,6 @@
 // Modified by ibis inc. for ibisOffice (2026-09-28): decoded images get `bleed_into_transparent`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `PlatformTextSystem::font_data`.
+// Modified by ibis inc. for ibisOffice (2026-10-20): added `PlatformTextSystem::synthetic_style`.
 mod app_menu;
 mod keyboard;
 mod keystroke;
@@ -1206,6 +1207,13 @@ pub trait PlatformTextSystem: Send + Sync {
     /// Added in ibisOffice's fork of gpui-pre 0.3.6.
     fn font_data(&self, _font_id: FontId) -> Option<(Arc<Vec<u8>>, u32)> {
         None
+    }
+    /// Whether the platform draws a font emboldened and slanted (bold or italic asked of a family without that face),
+    /// for writing it as it is drawn (into a PDF). `(false, false)` when it draws the font as it is.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    fn synthetic_style(&self, _font_id: FontId) -> (bool, bool) {
+        (false, false)
     }
     /// Get typographic bounds for a glyph.
     fn typographic_bounds(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Bounds<f32>>;
