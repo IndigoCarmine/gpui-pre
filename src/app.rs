@@ -776,6 +776,9 @@ pub struct App {
     pub(crate) system_wake_observers: SubscriberSet<(), Handler>,
     pub(crate) release_listeners: SubscriberSet<EntityId, ReleaseListener>,
     pub(crate) global_observers: SubscriberSet<TypeId, Handler>,
+    // Modified by ibis inc.: cancellable native quit requests, before shutdown observers.
+    quit_request_observers: SubscriberSet<(), Handler>,
+    checking_quit_request: bool,
     pub(crate) quit_observers: SubscriberSet<(), QuitHandler>,
     pub(crate) restart_observers: SubscriberSet<(), Handler>,
     pub(crate) window_closed_observers: SubscriberSet<(), WindowClosedHandler>,
@@ -911,6 +914,8 @@ impl App {
                 system_sleep_observers: SubscriberSet::new(),
                 system_wake_observers: SubscriberSet::new(),
                 global_observers: SubscriberSet::new(),
+                quit_request_observers: SubscriberSet::new(),
+                checking_quit_request: false,
                 quit_observers: SubscriberSet::new(),
                 restart_observers: SubscriberSet::new(),
                 restart_path: None,
@@ -1002,10 +1007,14 @@ impl App {
                     return true;
                 };
                 match cx.try_borrow_mut() {
-                    Ok(mut cx) => {
+                    Ok(mut cx) => cx.update(|cx| {
+                        // Modified by ibis inc.: let the application keep its windows alive to ask about saving.
+                        if !cx.should_quit() {
+                            return false;
+                        }
                         cx.shutdown();
                         true
-                    }
+                    }),
                     Err(_) => {
                         // Quit was requested while the AppCell was borrowed, so we can't shut down synchronously.
                         // The platform decides how to proceed.
@@ -2460,6 +2469,35 @@ impl App {
     /// Get a map from an action name to the documentation.
     pub fn action_documentation(&self) -> &HashMap<&'static str, &'static str> {
         self.actions.documentation()
+    }
+
+    /// Register a native quit-request guard. Returning false cancels this request, so an application
+    /// can show an asynchronous save question and call `quit` again after it has been answered.
+    /// All guards run before any shutdown observer. Dropping the subscription removes the guard.
+    /// Modified by ibis inc.: added for native Dock/system quit requests.
+    pub fn on_quit_requested(
+        &self,
+        on_request: impl FnMut(&mut App) -> bool + 'static,
+    ) -> Subscription {
+        let (subscription, activate) = self.quit_request_observers.insert((), Box::new(on_request));
+        activate();
+        subscription
+    }
+
+    /// Evaluate the native quit guards without shutting down the application. Reentrant requests
+    /// are refused; their outer request owns the decision. Modified by ibis inc.: added.
+    pub fn should_quit(&mut self) -> bool {
+        if self.checking_quit_request {
+            return false;
+        }
+        self.checking_quit_request = true;
+        let mut allowed = true;
+        self.quit_request_observers.clone().retain(&(), |guard| {
+            allowed &= guard(self);
+            true
+        });
+        self.checking_quit_request = false;
+        allowed
     }
 
     /// Register a callback to be invoked when the application is about to quit.
