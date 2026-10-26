@@ -1,3 +1,4 @@
+// Modified by ibis inc. (2026-10-26): honor interceptor propagation stops before low-level key listeners.
 // Modified by ibis inc. for ibisOffice (2026-09-25): added `Window::paint_glyph_transformed`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `Window::record_paints` and `Window::take_recorded_paints`.
 // Modified by ibis inc. for ibisOffice (2026-09-30): added `Window::record_paints_only` (recording without drawing).
@@ -6256,6 +6257,9 @@ impl Window {
         context_stack: Vec<KeyContext>,
         cx: &mut App,
     ) {
+        // A keystroke interceptor may have already consumed this event. Do not invoke
+        // even the first low-level listener after propagation was stopped.
+        if !cx.propagate_event { return; }
         self.dispatch_key_down_up_event(event, &dispatch_path, cx);
         if !cx.propagate_event {
             return;
