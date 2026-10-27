@@ -1,6 +1,7 @@
 // Modified by ibis inc. for ibisOffice (2026-09-28): decoded images get `bleed_into_transparent`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `PlatformTextSystem::font_data`.
 // Modified by ibis inc. for ibisOffice (2026-10-20): added `PlatformTextSystem::synthetic_style`.
+// Modified by ibis inc. for ibisOffice (2026-10-28): added `PlatformTextSystem::font_variations`.
 mod app_menu;
 mod keyboard;
 mod keystroke;
@@ -1214,6 +1215,14 @@ pub trait PlatformTextSystem: Send + Sync {
     /// Added in ibisOffice's fork of gpui-pre 0.3.6.
     fn synthetic_style(&self, _font_id: FontId) -> (bool, bool) {
         (false, false)
+    }
+    /// The axis values (OpenType tag, such as `wght`, and value) a font is drawn at when its file is a variable font:
+    /// the file holds the default instance only, so a PDF has to apply these to the outlines it embeds. Empty for
+    /// a font that is not variable, or when the platform cannot tell.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    fn font_variations(&self, _font_id: FontId) -> Vec<([u8; 4], f32)> {
+        Vec::new()
     }
     /// Get typographic bounds for a glyph.
     fn typographic_bounds(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Bounds<f32>>;
