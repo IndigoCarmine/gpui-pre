@@ -1,5 +1,6 @@
 // Modified by ibis inc. for ibisOffice (2026-09-29): a `Path` keeps the outline it was tessellated from (`Path::outline`).
 // Modified by ibis inc. for ibisOffice (2026-10-18): added `SceneSnapshot`, `Scene::snapshot_bounds`, and `Scene::replay_scaled`.
+// Modified by ibis inc. for ibisOffice (2026-10-21): added `OutlineDash` and `OutlineStroke::dash` (a stroked outline keeps its dash pattern for a PDF).
 // todo("windows"): remove
 #![cfg_attr(windows, allow(dead_code))]
 
@@ -1077,6 +1078,33 @@ pub struct OutlineStroke {
     pub round_caps: bool,
     /// Round joins (else miter joins).
     pub round_joins: bool,
+    /// The dashes the line is drawn in (a PDF's `d` operator); `None` for a whole line. The outline's contours are then
+    /// the line itself, not cut into dashes (the tessellated path, for the screen, is).
+    pub dash: Option<OutlineDash>,
+}
+
+/// The most lengths an [`OutlineDash`] holds (a dash-dot-dot pattern has six).
+pub const MAX_OUTLINE_DASH: usize = 6;
+
+/// The dashes of a stroked outline: the lengths of the dashes and the gaps in turn (so an even number of them), and
+/// how far into the pattern the line starts.
+///
+/// Added in ibisOffice's fork of gpui-pre 0.3.6.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct OutlineDash {
+    /// The lengths, in pixels, the first `len` of them.
+    pub array: [f32; MAX_OUTLINE_DASH],
+    /// How many of `array` are there.
+    pub len: usize,
+    /// Where in the pattern, in pixels, the line starts.
+    pub phase: f32,
+}
+
+impl OutlineDash {
+    /// The lengths of the dashes and the gaps in turn.
+    pub fn pattern(&self) -> &[f32] {
+        &self.array[..self.len.min(MAX_OUTLINE_DASH)]
+    }
 }
 
 /// The outline a [`Path`] built by a [`crate::PathBuilder`] was tessellated

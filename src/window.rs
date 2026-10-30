@@ -2,6 +2,7 @@
 // Modified by ibis inc. for ibisOffice (2026-09-25): added `Window::paint_glyph_transformed`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `Window::record_paints` and `Window::take_recorded_paints`.
 // Modified by ibis inc. for ibisOffice (2026-09-30): added `Window::record_paints_only` (recording without drawing).
+// Modified by ibis inc. for ibisOffice (2026-10-28): added `Window::is_recording_paints_only`.
 // Modified by ibis inc. for ibisOffice (2026-10-01): `Window::paint_path` composites the path over the whole device pixels around it (its partly covered edge pixels were cut off).
 // Modified by ibis inc. for ibisOffice (2026-10-18): added `Window::snapshot_rendered_scene` and `Window::paint_scene_snapshot`.
 #[cfg(feature = "profiler")]
@@ -3281,6 +3282,13 @@ impl Window {
     /// Added in ibisOffice's fork of gpui-pre 0.3.6.
     pub fn record_paints(&mut self) {
         self.paint_record = Some(Vec::new());
+    }
+
+    /// Whether the window only records what it paints (see [`Self::record_paints_only`]).
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn is_recording_paints_only(&self) -> bool {
+        self.paint_record_only
     }
 
     /// Record what each frame paints, as [`Self::record_paints`], and leave

@@ -1,6 +1,7 @@
 // Modified by ibis inc. for ibisOffice (2026-09-25): added `TextSystem::line_gap`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `TextSystem::font_data`.
 // Modified by ibis inc. for ibisOffice (2026-10-20): added `TextSystem::synthetic_style`.
+// Modified by ibis inc. for ibisOffice (2026-10-28): added `TextSystem::font_variations`.
 mod font_fallbacks;
 mod font_features;
 mod line;
@@ -447,6 +448,13 @@ impl TextSystem {
     /// Added in ibisOffice's fork of gpui-pre 0.3.6.
     pub fn synthetic_style(&self, font_id: FontId) -> (bool, bool) {
         self.platform_text_system.synthetic_style(font_id)
+    }
+
+    /// The variable-font axis values a font is drawn at (see [`PlatformTextSystem::font_variations`]).
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn font_variations(&self, font_id: FontId) -> Vec<([u8; 4], f32)> {
+        self.platform_text_system.font_variations(font_id)
     }
 
     /// Get the advance width for the given character, in the given font and size.
