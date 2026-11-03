@@ -2161,6 +2161,10 @@ pub struct TextInputConfiguration {
     pub suggestions: bool,
     /// The action advertised on a software keyboard's confirm ("enter") key.
     pub input_action: TextInputAction,
+    /// Whether the text runs top to bottom, so the platform's input method
+    /// lays out its composition and candidates vertically.
+    /// (Modified by ibis inc.: added.)
+    pub vertical: bool,
 }
 
 /// Automatic capitalization applied by software keyboards.
