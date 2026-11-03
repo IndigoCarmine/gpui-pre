@@ -1,5 +1,7 @@
 // Modified by ibis inc. for ibisOffice (2026-09-28): decoded images get `bleed_into_transparent`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `PlatformTextSystem::font_data`.
+// Modified by ibis inc. for ibisOffice (2026-10-20): added `PlatformTextSystem::synthetic_style`.
+// Modified by ibis inc. for ibisOffice (2026-10-28): added `PlatformTextSystem::font_variations`.
 mod app_menu;
 mod keyboard;
 mod keystroke;
@@ -258,6 +260,17 @@ pub trait Platform: 'static {
         directory: &Path,
         suggested_name: Option<&str>,
     ) -> oneshot::Receiver<Result<Option<PathBuf>>>;
+    /// As [`Self::prompt_for_new_path`], with a choice of file formats in the dialog where the platform has one
+    /// (macOS: a pop-up menu beside the name). Platforms without it ask as `prompt_for_new_path` does.
+    /// (Modified by ibis inc.: added.)
+    fn prompt_for_new_path_with_formats(
+        &self,
+        directory: &Path,
+        suggested_name: Option<&str>,
+        _formats: &[SaveFormat],
+    ) -> oneshot::Receiver<Result<Option<PathBuf>>> {
+        self.prompt_for_new_path(directory, suggested_name)
+    }
     fn can_select_mixed_files_and_dirs(&self) -> bool;
     fn reveal_path(&self, path: &Path);
     fn open_with_system(&self, path: &Path);
@@ -1195,6 +1208,21 @@ pub trait PlatformTextSystem: Send + Sync {
     /// Added in ibisOffice's fork of gpui-pre 0.3.6.
     fn font_data(&self, _font_id: FontId) -> Option<(Arc<Vec<u8>>, u32)> {
         None
+    }
+    /// Whether the platform draws a font emboldened and slanted (bold or italic asked of a family without that face),
+    /// for writing it as it is drawn (into a PDF). `(false, false)` when it draws the font as it is.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    fn synthetic_style(&self, _font_id: FontId) -> (bool, bool) {
+        (false, false)
+    }
+    /// The axis values (OpenType tag, such as `wght`, and value) a font is drawn at when its file is a variable font:
+    /// the file holds the default instance only, so a PDF has to apply these to the outlines it embeds. Empty for
+    /// a font that is not variable, or when the platform cannot tell.
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    fn font_variations(&self, _font_id: FontId) -> Vec<([u8; 4], f32)> {
+        Vec::new()
     }
     /// Get typographic bounds for a glyph.
     fn typographic_bounds(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Bounds<f32>>;
@@ -2503,6 +2531,16 @@ pub struct PathPromptOptions {
     pub multiple: bool,
     /// The prompt to show to a user when selecting a path
     pub prompt: Option<SharedString>,
+}
+
+/// A file format of the save dialog's choice (see [`Platform::prompt_for_new_path_with_formats`]).
+/// (Modified by ibis inc.: added.)
+#[derive(Clone, Debug)]
+pub struct SaveFormat {
+    /// The name shown in the choice.
+    pub label: SharedString,
+    /// The extensions (without the dot, e.g. `"odt"`) of the format; the first is the one a name gets.
+    pub extensions: Vec<String>,
 }
 
 /// What kind of prompt styling to show

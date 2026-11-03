@@ -1,6 +1,8 @@
+// Modified by ibis inc. (2026-10-26): honor interceptor propagation stops before low-level key listeners.
 // Modified by ibis inc. for ibisOffice (2026-09-25): added `Window::paint_glyph_transformed`.
 // Modified by ibis inc. for ibisOffice (2026-09-29): added `Window::record_paints` and `Window::take_recorded_paints`.
 // Modified by ibis inc. for ibisOffice (2026-09-30): added `Window::record_paints_only` (recording without drawing).
+// Modified by ibis inc. for ibisOffice (2026-10-28): added `Window::is_recording_paints_only`.
 // Modified by ibis inc. for ibisOffice (2026-10-01): `Window::paint_path` composites the path over the whole device pixels around it (its partly covered edge pixels were cut off).
 // Modified by ibis inc. for ibisOffice (2026-10-17): moving a window does not draw it again (`Window::moved`); resizing it keeps the cached views (`Window::bounds_changed`).
 // Modified by ibis inc. for ibisOffice (2026-10-18): added `Window::snapshot_rendered_scene` and `Window::paint_scene_snapshot`.
@@ -3314,6 +3316,13 @@ impl Window {
         self.paint_record = Some(Vec::new());
     }
 
+    /// Whether the window only records what it paints (see [`Self::record_paints_only`]).
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn is_recording_paints_only(&self) -> bool {
+        self.paint_record_only
+    }
+
     /// Record what each frame paints, as [`Self::record_paints`], and leave
     /// it out of the scene (nothing is drawn: much quicker when only the
     /// record is wanted). `false` draws again.
@@ -6288,6 +6297,9 @@ impl Window {
         context_stack: Vec<KeyContext>,
         cx: &mut App,
     ) {
+        // A keystroke interceptor may have already consumed this event. Do not invoke
+        // even the first low-level listener after propagation was stopped.
+        if !cx.propagate_event { return; }
         self.dispatch_key_down_up_event(event, &dispatch_path, cx);
         if !cx.propagate_event {
             return;
