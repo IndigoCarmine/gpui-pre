@@ -4509,6 +4509,8 @@ impl Window {
                 color: record_color,
                 blur_radius: record_blur,
                 inset: false,
+                element: bounds,
+                element_radii: corner_radii,
                 clip,
             });
             if self.paint_record_only {
@@ -4557,6 +4559,8 @@ impl Window {
                 color: record_color,
                 blur_radius: record_blur,
                 inset: true,
+                element: bounds,
+                element_radii: corner_radii,
                 clip,
             });
             if self.paint_record_only {
