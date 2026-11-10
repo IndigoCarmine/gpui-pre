@@ -1,3 +1,4 @@
+// Modified by ibis inc. (2026-10-26): include child offsets in viewport fitting.
 use smallvec::SmallVec;
 
 use crate::{
@@ -147,6 +148,9 @@ impl Element for Anchored {
             self.offset,
         );
 
+        let child_offset = children_bounds.origin - bounds.origin;
+        desired.origin += child_offset;
+
         let limits = Bounds {
             origin: Point::default(),
             size: window.viewport_size(),
@@ -158,7 +162,7 @@ impl Element for Anchored {
             if desired.left() < limits.left() || desired.right() > limits.right() {
                 let switched = Bounds::from_anchor_and_size(
                     anchor.other_side_along(Axis::Horizontal),
-                    origin,
+                    origin + child_offset,
                     children_bounds.size,
                 );
                 if !(switched.left() < limits.left() || switched.right() > limits.right()) {
@@ -170,7 +174,7 @@ impl Element for Anchored {
             if desired.top() < limits.top() || desired.bottom() > limits.bottom() {
                 let switched = Bounds::from_anchor_and_size(
                     anchor.other_side_along(Axis::Vertical),
-                    origin,
+                    origin + child_offset,
                     children_bounds.size,
                 );
                 if !(switched.top() < limits.top() || switched.bottom() > limits.bottom()) {
@@ -204,7 +208,7 @@ impl Element for Anchored {
             desired.origin.y = limits.origin.y + edges.top;
         }
 
-        let offset = desired.origin - bounds.origin;
+        let offset = desired.origin - children_bounds.origin;
         let offset = point(offset.x.round(), offset.y.round());
 
         window.with_element_offset(offset, |window| {

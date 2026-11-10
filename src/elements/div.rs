@@ -449,6 +449,27 @@ impl Interactivity {
         ));
     }
 
+    /// Capture an action selected by its runtime type, before normal action dispatch.
+    /// Unlike `capture_action`, this also supports actions discovered through a registry.
+    /// Non-capture dispatch propagates without calling the listener.
+    /// Modified by ibis inc.: added for modal guards over application action namespaces.
+    pub fn capture_action_type(
+        &mut self,
+        action_type: TypeId,
+        listener: impl Fn(&dyn Any, &mut Window, &mut App) + 'static,
+    ) {
+        self.action_listeners.push((
+            action_type,
+            Box::new(move |action, phase, window, cx| {
+                if phase == DispatchPhase::Capture {
+                    listener(action, window, cx);
+                } else {
+                    cx.propagate();
+                }
+            }),
+        ));
+    }
+
     /// Bind the given callback to an action dispatch during the bubble phase.
     /// The imperative API equivalent to [`InteractiveElement::on_action`].
     ///

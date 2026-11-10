@@ -1,4 +1,5 @@
 // Modified by ibis inc. for ibisOffice (2026-09-29): a built `Path` keeps its outline (`Path::outline`).
+// Modified by ibis inc. for ibisOffice (2026-10-21): added `PathBuilder::dash_offset`; a dashed stroke keeps its whole line in the outline with its dash pattern (`OutlineStroke::dash`).
 use anyhow::Error;
 use etagere::euclid::{Point2D, Vector2D};
 use lyon::geom::Angle;
@@ -12,7 +13,7 @@ use lyon::tessellation::{
 pub use lyon::math::Transform;
 pub use lyon::tessellation::{FillOptions, FillRule, StrokeOptions};
 
-use crate::{OutlineStroke, OutlineVerb, Path, PathOutline, Pixels, Point, point, px};
+use crate::{MAX_OUTLINE_DASH, OutlineDash, OutlineStroke, OutlineVerb, Path, PathOutline, Pixels, Point, point, px};
 use std::sync::Arc;
 
 /// Style of the PathBuilder
@@ -30,6 +31,7 @@ pub struct PathBuilder {
     /// PathStyle of the PathBuilder
     pub style: PathStyle,
     dash_array: Option<Vec<Pixels>>,
+    dash_offset: Pixels,
 }
 
 impl From<lyon::path::Builder> for PathBuilder {
@@ -81,6 +83,7 @@ impl Default for PathBuilder {
             style: PathStyle::Fill(FillOptions::default()),
             transform: None,
             dash_array: None,
+            dash_offset: Pixels::ZERO,
         }
     }
 }
@@ -119,6 +122,14 @@ impl PathBuilder {
         };
 
         self.dash_array = Some(array);
+        self
+    }
+
+    /// Sets how far into the dash array the path starts (`stroke-dashoffset`).
+    ///
+    /// Added in ibisOffice's fork of gpui-pre 0.3.6.
+    pub fn dash_offset(mut self, offset: Pixels) -> Self {
+        self.dash_offset = offset;
         self
     }
 
@@ -252,14 +263,26 @@ impl PathBuilder {
 
         match self.style {
             PathStyle::Stroke(options) => {
-                let dashed = Self::dashed(self.dash_array, &path);
+                let dashed = Self::dashed(self.dash_array.as_deref(), self.dash_offset, &path);
                 let mut built = Self::tessellate_stroke(None, &dashed, &options)?;
+                // A dash pattern a PDF can say (`d`) is kept as it is, over the whole line; a longer one is cut into
+                // the dashes the outline then has.
+                let pattern = self.dash_array.as_deref().filter(|a| !a.is_empty() && a.len() <= MAX_OUTLINE_DASH);
+                let dash = pattern.map(|a| {
+                    let mut array = [0.0; MAX_OUTLINE_DASH];
+                    for (slot, length) in array.iter_mut().zip(a) {
+                        *slot = length.0;
+                    }
+                    OutlineDash { array, len: a.len(), phase: self.dash_offset.0 }
+                });
                 let stroke = OutlineStroke {
                     width: px(options.line_width),
                     round_caps: options.start_cap == lyon::tessellation::LineCap::Round,
                     round_joins: options.line_join == lyon::tessellation::LineJoin::Round,
+                    dash,
                 };
-                built.outline = Some(Arc::new(Self::outline(&dashed, Some(stroke))));
+                let contours = if dash.is_some() { &path } else { &dashed };
+                built.outline = Some(Arc::new(Self::outline(contours, Some(stroke))));
                 Ok(built)
             }
             PathStyle::Fill(options) => {
@@ -291,21 +314,26 @@ impl PathBuilder {
         PathOutline { verbs, stroke }
     }
 
-    /// `path` cut into dashes of `dash_array` (the path itself without one).
-    fn dashed(dash_array: Option<Vec<Pixels>>, path: &lyon::path::Path) -> lyon::path::Path {
-        let Some(dash_array) = dash_array else { return path.clone() };
+    /// `path` cut into dashes of `dash_array`, from `offset` into it (the path itself without one).
+    fn dashed(dash_array: Option<&[Pixels]>, offset: Pixels, path: &lyon::path::Path) -> lyon::path::Path {
+        let Some(dash_array) = dash_array.filter(|a| !a.is_empty()) else { return path.clone() };
         let measurements = lyon::algorithms::measure::PathMeasurements::from_path(path, 0.01);
         let mut sampler = measurements.create_sampler(path, lyon::algorithms::measure::SampleType::Normalized);
         let mut builder = lyon::path::Path::builder();
         let total_length = sampler.length();
         let dash_array_len = dash_array.len();
-        let mut pos = 0.;
+        // Start `offset` into the pattern: before the path's start by as much, a dash cut where it begins.
+        let period: f32 = dash_array.iter().map(|d| d.0).sum();
+        let mut pos = if period > 0.0 { -offset.0.rem_euclid(period) } else { 0. };
         let mut dash_index = 0;
         while pos < total_length {
             let dash_length = dash_array[dash_index % dash_array_len].0;
+            if dash_length <= 0.0 && period <= 0.0 {
+                break;
+            }
             let next_pos = (pos + dash_length).min(total_length);
-            if dash_index % 2 == 0 {
-                sampler.split_range(pos / total_length..next_pos / total_length, &mut builder);
+            if dash_index % 2 == 0 && next_pos > pos.max(0.0) {
+                sampler.split_range(pos.max(0.0) / total_length..next_pos / total_length, &mut builder);
             }
             pos = next_pos;
             dash_index += 1;
