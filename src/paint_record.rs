@@ -109,6 +109,10 @@ pub enum PaintRecord {
         blur_radius: Pixels,
         /// Inside the rectangle.
         inset: bool,
+        /// The element the shadow belongs to and its corners' radii: an inside shadow (`inset`) shows only inside it (modified by ibis inc.: `element` and `element_radii`).
+        element: Bounds<Pixels>,
+        /// The corner radii of `element`.
+        element_radii: Corners<Pixels>,
         /// The content mask.
         clip: Bounds<Pixels>,
     },

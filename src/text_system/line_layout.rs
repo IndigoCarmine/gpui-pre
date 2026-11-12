@@ -74,34 +74,36 @@ impl LineLayout {
     }
 
     /// closest_index_for_x returns the character boundary closest to the given x coordinate
-    /// (e.g. to handle aligning up/down arrow keys)
+    /// (e.g. to handle aligning up/down arrow keys, or placing a caret by a click).
+    ///
+    /// The boundaries are the left edges of the glyphs and, last, the end of the line (`len` at
+    /// `width`). The one whose x is nearest to `x` wins; halfway between two boundaries the
+    /// earlier one wins, so a click in the left half of a character is before it and a click
+    /// in its right half is after it (modified by ibis inc.: the end of the line used to be taken
+    /// for everything right of the last glyph's left edge, so the left half of the last
+    /// character put the caret after it).
     pub fn closest_index_for_x(&self, x: Pixels) -> usize {
-        let mut prev_index = 0;
-        let mut prev_x = px(0.);
-
+        let mut best_index = 0;
+        let mut best_distance = x.abs();
+        let mut last_index = 0;
         for run in self.runs.iter() {
             for glyph in run.glyphs.iter() {
-                if glyph.position.x >= x {
-                    if glyph.position.x - x < x - prev_x {
-                        return glyph.index;
-                    } else {
-                        return prev_index;
-                    }
+                // Several glyphs of one cluster (a ligature, a base with marks) share an index.
+                if glyph.index == last_index && glyph.index != 0 {
+                    continue;
                 }
-                prev_index = glyph.index;
-                prev_x = glyph.position.x;
+                last_index = glyph.index;
+                let distance = (glyph.position.x - x).abs();
+                if distance < best_distance {
+                    best_distance = distance;
+                    best_index = glyph.index;
+                }
             }
         }
-
-        if self.len == 1 {
-            if x > self.width / 2. {
-                return 1;
-            } else {
-                return 0;
-            }
+        if (self.width - x).abs() < best_distance {
+            best_index = self.len;
         }
-
-        self.len
+        best_index
     }
 
     /// The x position of the character at the given index
@@ -1102,6 +1104,24 @@ mod tests {
             .iter()
             .map(|g| f32::from(g.position.x))
             .collect()
+    }
+
+    #[test]
+    fn closest_index_for_x_picks_the_nearest_boundary_including_the_end() {
+        // "a" (0..10), "あ" (3 bytes, 10..30), "b" (30..40); the line is 40 wide and 5 bytes long.
+        let mut layout = make_layout(vec![glyph_at(0., 0), glyph_at(10., 1), glyph_at(30., 4)]);
+        layout.width = px(40.);
+        layout.len = 5;
+        let at = |x: f32| layout.closest_index_for_x(px(x));
+        assert_eq!(at(-5.), 0);
+        assert_eq!(at(4.), 0);
+        assert_eq!(at(6.), 1);
+        assert_eq!(at(19.), 1);
+        assert_eq!(at(21.), 4);
+        assert_eq!(at(34.), 4);
+        // The left half of the last character is before it, the right half after it.
+        assert_eq!(at(36.), 5);
+        assert_eq!(at(400.), 5);
     }
 
     #[test]
